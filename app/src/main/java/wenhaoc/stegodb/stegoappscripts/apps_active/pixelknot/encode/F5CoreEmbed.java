@@ -36,7 +36,6 @@ public class F5CoreEmbed {
     public F5CoreEmbed(String cover_path, int quality)
     {
         dct = new DCT(quality);
-
         //huf = new Huffman();
         image = new ImageData(cover_path, dct);
         original_coefficients = image.coefficients.clone();
@@ -56,6 +55,150 @@ public class F5CoreEmbed {
     {
         image.coefficients = original_coefficients.clone();
         JpegEncoder.compressJpeg(outPath, image, dct);
+    }
+
+    ByteArrayInputStream data;
+    F5Random random;
+    public int kBits(int k) {
+        // Permutation must be initiated before status word calling "random.getBytes()"
+        Permutation permutation = new Permutation(image.coefficients.length, random);
+        int statusWord = data.available();
+        f5_k = k;
+        f5_codeN = (1 << f5_k) - 1;
+        int availableBits = 0;
+        boolean isLastByte = false;
+        int currentByte = 0;
+        int kBits = 0;
+        for (int i = 0; i < f5_k; i++) {
+            if (availableBits == 0) {
+                if (data.available()==0)
+                {
+                    isLastByte = true;
+                    break;
+                }
+                currentByte = data.read();
+                currentByte ^= random.getNextByte();
+                //P.print("need " +(image.f5_k-i) + " more bits. new byte: " + Integer.toBinaryString(currentByte));
+                availableBits = 8;
+            }
+            int nextBit = currentByte & 1;
+            currentByte >>= 1;
+            availableBits--;
+            kBits |= nextBit << i;
+            f5_embedded++;
+        }
+        return kBits;
+    }
+
+    public int nCoeffs(int n) {
+        f5_codeN = n;
+        Permutation permutation = new Permutation(image.coefficients.length, random);
+        int[] codeWord = new int[f5_codeN];
+        for (int i = 0; i < f5_codeN; permutation_index++)
+        {
+            int shuffledIndex = permutation.getShuffled(permutation_index);
+            if (shuffledIndex % 64 == 0 || image.coefficients[shuffledIndex] == 0)
+                continue;
+            codeWord[i++] = shuffledIndex;
+        }
+        int hash = 0;
+        for (int i = 0; i < f5_codeN; i++)
+        {
+            int coeff = image.coefficients[codeWord[i]];
+            int extractedBit = coeff>0? coeff&1 : 1-(coeff&1);
+            hash ^= i+1;
+        }
+        return hash;
+    }
+
+    public void cellToChange() {
+        int c = kBits(2) ^ nCoeffs(3);
+    }
+
+    public void tempEmbed(String message, String seed, String outPath) {
+        ByteArrayInputStream data = new ByteArrayInputStream(message.getBytes());
+        F5Random random = new F5Random(seed.getBytes());
+        // Permutation must be initiated before status word calling "random.getBytes()"
+        Permutation permutation = new Permutation(image.coefficients.length, random);
+        int statusWord = data.available();
+        f5_k = getK(image.capacity, statusWord+4);
+        f5_codeN = (1 << f5_k) - 1;
+        int availableBits = 0;
+        boolean isLastByte = false;
+        int currentByte = 0;
+        embeddingLoop: do
+        {
+            //steps:
+            // 1. get the newest k bits
+            int kBits = 0;
+            for (int i = 0; i < f5_k; i++) {
+                if (availableBits == 0) {
+                    if (data.available()==0)
+                    {
+                        isLastByte = true;
+                        break;
+                    }
+                    currentByte = data.read();
+                    currentByte ^= random.getNextByte();
+                    //P.print("need " +(image.f5_k-i) + " more bits. new byte: " + Integer.toBinaryString(currentByte));
+                    availableBits = 8;
+                }
+                int nextBit = currentByte & 1;
+                currentByte >>= 1;
+                availableBits--;
+                kBits |= nextBit << i;
+                f5_embedded++;
+            }
+            //P.print("k bits: " + Integer.toBinaryString(kBits));
+            // 2. get a code word of n non-zero coefficients
+            // 3. encode the k bits to the code word
+            // 4. if the action turned a coefficient to 0, go back to step 2; else go to step 1
+            int[] codeWord = new int[f5_codeN];
+            int cellToChange = 0;
+            do {
+                //P.print("finding n non-zero coeffs starting from " + permutation_index);
+                int startingIndex = permutation_index;
+                for (int i = 0; i < f5_codeN; permutation_index++)
+                {
+                    if (permutation_index >= image.coefficients.length)
+                    {
+                        Log.d("WENHAOCHEN", "  Capacity exhausted.");
+                        break embeddingLoop;
+                    }
+                    int shuffledIndex = permutation.getShuffled(permutation_index);
+                    if (shuffledIndex % 64 == 0 || image.coefficients[shuffledIndex] == 0)
+                        continue;
+                    codeWord[i++] = shuffledIndex;
+                }
+                int hash = 0;
+                for (int i = 0; i < f5_codeN; i++)
+                {
+                    int coeff = image.coefficients[codeWord[i]];
+                    int extractedBit = coeff>0? coeff&1 : 1-(coeff&1);
+                    if (extractedBit == 1)
+                        hash ^= i+1;
+                }
+                //P.print("code word hash = " + Integer.toBinaryString(hash));
+                cellToChange = hash ^ kBits;
+                if (cellToChange==0) //no changes needed
+                    break;
+                // make the change
+                cellToChange--;
+                if (image.coefficients[codeWord[cellToChange]]>0)
+                    image.coefficients[codeWord[cellToChange]]--;
+                else
+                    image.coefficients[codeWord[cellToChange]]++;
+                recordChange(codeWord[cellToChange]);
+                if (image.coefficients[codeWord[cellToChange]]==0)
+                {
+                    permutation_index = startingIndex;
+                    recordThrow(codeWord[cellToChange]);
+                    //P.print("redoing because 0: " + codeWord[cellToChange]);
+                }
+            }
+            while (image.coefficients[codeWord[cellToChange]]==0);
+        }
+        while (!isLastByte);
     }
 
     //message and seed are the parameters feed to F5 core, encryption
