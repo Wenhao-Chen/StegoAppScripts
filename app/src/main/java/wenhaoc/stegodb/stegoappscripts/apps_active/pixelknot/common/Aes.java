@@ -62,6 +62,7 @@ public class Aes {
     }
 
 
+    // password is actually the first 3rd of the whole user password
     public static String[] encryptWithPassword(String password, String message, String salt)
     {
         Map.Entry<String, String> entry = EncryptWithPassword(password, message, salt.getBytes()).entrySet().iterator().next();

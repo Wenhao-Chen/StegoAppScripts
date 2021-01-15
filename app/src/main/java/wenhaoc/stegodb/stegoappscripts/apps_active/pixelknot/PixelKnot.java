@@ -55,6 +55,11 @@ public class PixelKnot {
             String iv = encrypted[0];
             String ciphertext = encrypted[1];
             long time = System.currentTimeMillis();
+
+            // payload = 32 bits of "status word" + the ciphertext
+            // status word is: 8 bits of k (masked), then 24 bits more pseudo random bytes
+            //  unmasked status word: [1-8] [0] [0] [0]
+            //TODO: put the sentinel and IV in
             f5.embed(ciphertext, f5Seed, stego.stegoImage.getAbsolutePath());
             time = System.currentTimeMillis()-time;
 
@@ -91,7 +96,7 @@ public class PixelKnot {
     {
         int result = -1;
 
-        int ciphertext_length = targetLength/8-4- Constants.sentinel_length-Constants.iv_length;
+        int ciphertext_length = targetLength/8 - 4 - Constants.sentinel_length-Constants.iv_length;
         if (ciphertext_length < Constants.min_ciphertext_length) // not enough capacity
             return 1;
         else if (ciphertext_length <= 77)
