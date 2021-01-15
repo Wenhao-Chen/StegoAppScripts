@@ -56,11 +56,8 @@ public class PixelKnot {
             String ciphertext = encrypted[1];
             long time = System.currentTimeMillis();
 
-            // payload = 32 bits of "status word" + the ciphertext
-            // status word is: 8 bits of k (masked), then 24 bits more pseudo random bytes
-            //  unmasked status word: [1-8] [0] [0] [0]
-            //TODO: put the sentinel and IV in
-            f5.embed(ciphertext, f5Seed, stego.stegoImage.getAbsolutePath());
+            // this is how PixelKnot assembles the payload
+            f5.embed(Constants.PASSWORD_SENTINEL+iv+ciphertext, f5Seed, stego.stegoImage.getAbsolutePath());
             time = System.currentTimeMillis()-time;
 
             // make stats file
